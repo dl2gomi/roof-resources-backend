@@ -35,6 +35,8 @@ async function createSuperAdmin(email, password, firstName, lastName, phone) {
 connectDB();
 
 // create franchisor
-createSuperAdmin('dl2gomi@gmail.com', '654654654', 'Denis', 'Lee', '1781695880').finally(() => {
-  disconnectDB();
-});
+createSuperAdmin(process.env.SUPER_ADMIN, [process.env.DEFAULT_PASSWORD], 'Super', 'Admin').finally(
+  () => {
+    disconnectDB();
+  }
+);
