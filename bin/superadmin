@@ -1,0 +1,40 @@
+require('module-alias/register');
+require('dotenv').config();
+
+const bcrypt = require('bcrypt');
+const User = require('@/models/User');
+const { connectDB, disconnectDB } = require('@/config/db');
+
+async function createSuperAdmin(email, password, firstName, lastName, phone) {
+  try {
+    // hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // create super admin
+    const superAdmin = new User({
+      email,
+      password: hashedPassword,
+      profile: {
+        firstName,
+        lastName,
+        phone,
+      },
+    });
+
+    // save
+    await superAdmin.save();
+
+    // log
+    console.log('Successfully initialized the franchisor...');
+  } catch (err) {
+    console.log('Error in initializing franchisor...', err);
+  }
+}
+
+// db connection
+connectDB();
+
+// create franchisor
+createSuperAdmin('dl2gomi@gmail.com', '654654654', 'Denis', 'Lee', '1781695880').finally(() => {
+  disconnectDB();
+});
