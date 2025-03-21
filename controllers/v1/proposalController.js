@@ -1,8 +1,6 @@
-const User = require('@/models/User');
 const Branch = require('@/models/Branch');
 const Proposal = require('@/models/Proposal');
 const Invoice = require('@/models/Invoice');
-const bcrypt = require('bcrypt');
 
 // create a new proposal
 const store = async (req, res) => {
@@ -10,6 +8,8 @@ const store = async (req, res) => {
     const { customer, pricing, detail, options } = req.body;
     const branch = await Branch.findById(req.user.franchise?.branch);
     const user = req.user;
+
+    // create a new proposal
     const newProposal = new Proposal({
       user,
       branch,
@@ -21,11 +21,34 @@ const store = async (req, res) => {
 
     await newProposal.save();
 
+    const link = `${process.env.PAYMENT_LINK}/${btoa(newProposal._id.toString())}`;
+    const mailBody = `Hi ${customer.name},
+Thank you for considering The Roof Resource for your roofing needs! We’ve prepared your personalized quote, and you can review all the details and complete your purchase online with just a few clicks.
+
+Click the link below to view your custom quote:
+${link}
+
+This quote includes everything you need to get started:
+✅ Transparent pricing – no hidden fees
+✅ High-quality materials sourced directly
+✅ Easy online approval & payment
+
+If you have any questions or need assistance, feel free to reply to this email or call us at ${req.user.profile.phone}. We’re here to help!
+Looking forward to helping you with your new roof.
+Best,
+
+${req.user.profile.firstName} ${req.user.profile.lastName} 
+The Roof Resource Team
+${req.user.profile.phone} | ${req.user.email}
+    `;
+
     // TODO: send email to the user logics
 
     // send response
     return res.json({
-      message: 'Successfully created a new proposal',
+      message: 'Successfully created a new proposal. Please send it to the customer and confirm it',
+      mailBody,
+      id: newProposal._id,
     });
   } catch (error) {
     return res.status(500).json({ message: 'Internal Server error' });
@@ -34,40 +57,43 @@ const store = async (req, res) => {
 
 // update a branch
 const update = async (req, res) => {
-  const { title, merchantId, address, isActive } = req.body;
+  const { isSent } = req.body;
   const { id } = req.params;
 
   try {
     if (!id) {
-      return res.status(400).json({ message: 'Branch for update is not specified' });
+      return res.status(400).json({ message: 'Proposal for confirming send is not specified' });
     }
 
-    const branch = await Branch.findById(id);
-    if (!branch) {
-      return res.status(404).json({ message: 'Specified branch does not exist' });
+    const proposal = await Proposal.findById(id);
+    if (!proposal) {
+      return res.status(404).json({ message: 'Specified proposal does not exist' });
     }
 
     // update
-    if (title) branch.title = title;
-    if (address) branch.address = address;
-    if (merchantId) branch.merchantId = merchantId;
-    if (isActive !== undefined && isActive !== null) branch.isActive = isActive;
+    if (isSent !== undefined && isSent !== null) proposal.isSent = isSent;
 
-    await branch.save();
+    await proposal.save();
+
+    // create invoice
+    const invoice = await Invoice.findOne({ proposal: proposal._id });
+
+    if (!invoice && isSent) {
+      const newInvoice = new Invoice({
+        proposal,
+      });
+
+      await newInvoice.save();
+    }
 
     // TODO: send email to the user logics
 
     // send response
     res.json({
-      message: 'Successfully updated the branch',
+      message: 'Successfully sent the proposal',
       id,
-      title,
-      address,
-      merchantId,
-      isActive,
     });
   } catch (error) {
-    console.log('Error while updating branch...', error);
     res.status(500).json({ message: 'Internal Server error' });
   }
 };
@@ -124,19 +150,35 @@ const list = async (req, res) => {
     let sortObject = {};
     if (sort === 'createdAt') {
       sortObject['createdAt'] = -1; // Descending order for createdAt
-    } else if (sort === 'title') {
-      sortObject['title'] = 1; // Ascending order for title
+      // } else if (sort === 'name') {
+      //   sortObject['name'] = 1; // Ascending order for customer.name
     } else {
       sortObject = { createdAt: -1 }; // Default sorting by createdAt descending
     }
 
+    // Role-based filtering
+    let roleMatch = {};
+    if (req.user?.franchise === undefined) {
+      // Superadmin: Fetch all proposals
+      roleMatch = {};
+    } else if (req.user.franchise.role === 'admin') {
+      // Admin: Fetch only proposals for his branch
+      roleMatch = { branch: req.user.franchise.branch };
+    } else if (req.user.franchise.role === 'user') {
+      // User: Fetch only proposals created by the user
+      roleMatch = { user: req.user._id };
+    }
+
+    // Original search condition + role-based filtering
+    const matchQuery = {
+      ...roleMatch,
+      $or: [{ 'customer.name': searchPattern }, { 'customer.address': searchPattern }],
+    };
+
     // Aggregate query for search, pagination, and sorting
     const proposals = await Proposal.aggregate([
       {
-        $match: {
-          // Match any branch that contains the search string in any of these fields
-          $or: [{ 'customer.name': searchPattern }, { 'customer.address': searchPattern }],
-        },
+        $match: matchQuery,
       },
       {
         $sort: sortObject, // Apply the dynamic sort based on the query parameter
@@ -150,41 +192,29 @@ const list = async (req, res) => {
       {
         $project: {
           _id: 1,
-          'customer.name': 1,
-          'customer.address': 1,
-          isActive: 1,
-          ownerName: {
-            $concat: ['$ownerDetails.profile.firstName', ' ', '$ownerDetails.profile.lastName'],
-          },
+          name: '$customer.name',
+          address: '$customer.address',
+          isSent: 1,
         },
       },
     ]);
 
     // Get the total number of matching branches
-    const totalBranches = await Branch.countDocuments({
-      $or: [
-        { title: searchPattern },
-        { address: searchPattern },
-        { 'ownerDetails.firstName': searchPattern },
-        { 'ownerDetails.lastName': searchPattern },
-        { merchantId: searchPattern },
-        { 'ownerDetails.phone': searchPattern },
-        { 'ownerDetails.email': searchPattern },
-      ],
+    const totalProposals = await Proposal.countDocuments({
+      $or: [{ 'customer.name': searchPattern }, { 'customer.address': searchPattern }],
     });
 
     // Send the response with branches and pagination metadata
     res.status(200).json({
-      branches,
+      proposals,
       pagination: {
-        totalLength: totalBranches,
-        pageCount: Math.ceil(totalBranches / limitNumber),
-        currentPage: totalBranches === 0 ? 0 : pageNumber,
+        totalLength: totalProposals,
+        pageCount: Math.ceil(totalProposals / limitNumber),
+        currentPage: totalProposals === 0 ? 1 : pageNumber,
         itemsPerPage: limitNumber,
       },
     });
   } catch (error) {
-    console.error('Error retrieving branches:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 };

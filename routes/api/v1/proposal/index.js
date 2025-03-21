@@ -4,6 +4,7 @@ const router = express.Router();
 const { auth, onlyAdmin } = require('@/middlewares');
 const { proposalController } = require('@/controllers/v1');
 
+router.post('/', auth, onlyAdmin, proposalController.store); // POST /api/v1/proposals/
 router.put('/:id', auth, onlyAdmin, proposalController.update); // PUT /api/v1/proposals/:id
 router.get('/', auth, proposalController.list); // GET /api/v1/proposals/
 router.get('/:id', auth, proposalController.show); // GET /api/v1/proposals/:id

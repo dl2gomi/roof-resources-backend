@@ -226,7 +226,7 @@ const list = async (req, res) => {
       pagination: {
         totalLength: totalBranches,
         pageCount: Math.ceil(totalBranches / limitNumber),
-        currentPage: totalBranches === 0 ? 0 : pageNumber,
+        currentPage: totalBranches === 0 ? 1 : pageNumber,
         itemsPerPage: limitNumber,
       },
     });

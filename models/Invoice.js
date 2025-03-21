@@ -8,11 +8,9 @@ const invoiceSchema = new mongoose.Schema(
       ref: 'Proposal',
       required: true,
     },
-    branch: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Branch',
-      required: true,
-    },
+    paidAt: { type: Date, default: null },
+    via: { type: String, default: null },
+    amount: { type: Number, default: null },
   },
   {
     collection: 'invoices',

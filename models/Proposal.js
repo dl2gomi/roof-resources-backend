@@ -23,7 +23,7 @@ const pricingSchema = new mongoose.Schema(
 // Define the detail schema
 const detailSchema = new mongoose.Schema(
   {
-    home: { type: Number, required: true },
+    house: { type: Number, required: true },
     percentWaste: { type: Number, required: true },
     squares: { type: Number, required: true },
     garage: { type: Boolean, default: null },
@@ -60,6 +60,7 @@ const proposalSchema = new mongoose.Schema(
       ref: 'Branch',
       required: true,
     },
+    isSent: { type: Boolean, default: false },
     customer: customerSchema,
     pricing: pricingSchema,
     detail: detailSchema,

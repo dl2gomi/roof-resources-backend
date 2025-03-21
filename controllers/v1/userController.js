@@ -128,9 +128,52 @@ const change = async (req, res) => {
   }
 };
 
+const updateAvatar = async (req, res) => {
+  try {
+    if (!req.body.image) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    // Save the image as a Buffer in the User document
+    const user = req.user;
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Save the uploaded image buffer to the user's avatar field
+    const avatarBuffer = Buffer.from(req.body.image, 'base64');
+    user.profile.avatar = avatarBuffer; // Store the image as a Buffer
+    user.markModified('profile.avatar');
+
+    await user.save(); // Save the updated user document
+
+    return res.status(200).json({ message: 'Avatar uploaded successfully' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
+const serveAvatar = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.profile.avatar) {
+      return res.status(404).json({ message: 'Avatar not found' });
+    }
+
+    const base64Image = Buffer.from(user.profile.avatar).toString('base64');
+    res.json({ image: `data:image/png;base64,${base64Image}` });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
 module.exports = {
   login,
   info,
   update,
   change,
+  updateAvatar,
+  serveAvatar,
 };
