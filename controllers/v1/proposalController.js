@@ -2,6 +2,8 @@ const Branch = require('@/models/Branch');
 const Proposal = require('@/models/Proposal');
 const Invoice = require('@/models/Invoice');
 
+const { calculateProjectFee } = require('@/helpers');
+
 // create a new proposal
 const store = async (req, res) => {
   try {
@@ -23,6 +25,7 @@ const store = async (req, res) => {
 
     const link = `${process.env.PAYMENT_LINK}/${btoa(newProposal._id.toString())}`;
     const mailBody = `Hi ${customer.name},
+    
 Thank you for considering The Roof Resource for your roofing needs! We’ve prepared your personalized quote, and you can review all the details and complete your purchase online with just a few clicks.
 
 Click the link below to view your custom quote:
@@ -49,6 +52,55 @@ ${req.user.profile.phone} | ${req.user.email}
       message: 'Successfully created a new proposal. Please send it to the customer and confirm it',
       mailBody,
       id: newProposal._id,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Internal Server error' });
+  }
+};
+
+const mail = async (req, res) => {
+  try {
+    const { id } = req.body;
+
+    if (!id) {
+      return res.status(400).json({ message: 'Proposal for confirming send is not specified' });
+    }
+
+    const proposal = await Proposal.findById(id).populate('user');
+
+    if (!proposal) {
+      return res.status(404).json({ message: 'Specified proposal does not exist' });
+    }
+
+    const link = `${process.env.PAYMENT_LINK}/${btoa(proposal._id.toString())}`;
+    const mailBody = `Hi ${proposal.customer.name},
+
+Thank you for considering The Roof Resource for your roofing needs! We’ve prepared your personalized quote, and you can review all the details and complete your purchase online with just a few clicks.
+
+Click the link below to view your custom quote:
+${link}
+
+This quote includes everything you need to get started:
+✅ Transparent pricing – no hidden fees
+✅ High-quality materials sourced directly
+✅ Easy online approval & payment
+
+If you have any questions or need assistance, feel free to reply to this email or call us at ${proposal.user.profile.phone}. We’re here to help!
+Looking forward to helping you with your new roof.
+Best,
+
+${proposal.user.profile.firstName} ${proposal.user.profile.lastName} 
+The Roof Resource Team
+${proposal.user.profile.phone} | ${proposal.user.email}
+    `;
+
+    // TODO: send email to the user logics
+
+    // send response
+    return res.json({
+      message: 'Please send the mail to the customer and confirm it',
+      mailBody,
+      id: proposal._id,
     });
   } catch (error) {
     return res.status(500).json({ message: 'Internal Server error' });
@@ -104,32 +156,42 @@ const show = async (req, res) => {
 
   try {
     if (!id) {
-      return res.status(400).json({ message: 'Branch is not specified' });
+      return res.status(400).json({ message: 'Proposal is not specified' });
     }
 
-    const branch = await Branch.findById(id).populate('owner');
+    const proposal = await Proposal.findById(id).populate(['user', 'branch']);
 
-    if (!branch) {
-      return res.status(404).json({ message: 'Specified branch does not exist' });
+    if (!proposal) {
+      return res.status(404).json({ message: 'Specified proposal does not exist' });
     }
+
+    if (
+      req.user.franchise &&
+      req.user.franchise.branch.toString() !== proposal.branch._id.toString()
+    ) {
+      return res.status(403).json({ message: 'This proposal does not belong to your branch' });
+    }
+
+    const totalSquares = proposal.detail.squares * (1 + proposal.detail.percentWaste / 100);
+    const projectFee = calculateProjectFee(totalSquares);
 
     // send response
     res.json({
-      title: branch.title,
-      address: branch.address,
-      merchantId: branch.merchantId,
-      isActive: branch.isActive,
-      createdAt: branch.createdAt,
-      owner: {
-        email: branch.owner.email,
-        fistName: branch.owner.profile?.firstName,
-        lastName: branch.owner.profile?.lastName,
-        avatar: branch.owner.profile?.avatar,
-        phone: branch.owner.profile?.phone,
+      id,
+      customer: proposal.customer,
+      pricing: { ...proposal.pricing.toObject(), projectFee },
+      detail: { ...proposal.detail.toObject(), totalSquares },
+      options: proposal.options,
+      isSent: proposal.isSent,
+      createdAt: proposal.createdAt,
+      admin: {
+        name: `${proposal.user.profile.firstName} ${proposal.user.profile.lastName}`,
+        phone: proposal.user.profile.phone,
+        email: proposal.user.email,
       },
     });
   } catch (error) {
-    console.log('Error while getting info of branch...', error);
+    console.log(error);
     res.status(500).json({ message: 'Internal Server error' });
   }
 };
@@ -227,4 +289,5 @@ module.exports = {
   show,
   list,
   destroy,
+  mail,
 };
